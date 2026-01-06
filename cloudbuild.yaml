@@ -1,3 +1,4 @@
+
 # Copyright 2018 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +15,7 @@
 
 # [START cloudbuild]
 steps:
-# Run unit tests
+# This step runs the unit tests on the app
 - name: 'python:3.7-slim'
   id: Test
   entrypoint: /bin/sh
@@ -22,7 +23,7 @@ steps:
   - -c
   - 'pip install flask && python test_app.py -v'
 
-# Build container image
+# This step builds the container image.
 - name: 'gcr.io/cloud-builders/docker'
   id: Build
   args:
@@ -31,39 +32,42 @@ steps:
   - 'us-east4-docker.pkg.dev/$PROJECT_ID/my-repository/hello-cloudbuild:$SHORT_SHA'
   - '.'
 
-# Push image to Artifact Registry
+# This step pushes the image to Artifact Registry
+# The PROJECT_ID and SHORT_SHA variables are automatically
+# replaced by Cloud Build.
 - name: 'gcr.io/cloud-builders/docker'
   id: Push
   args:
   - 'push'
   - 'us-east4-docker.pkg.dev/$PROJECT_ID/my-repository/hello-cloudbuild:$SHORT_SHA'
+# [END cloudbuild]
 
-# Setup SSH using Secret Manager
+# Access the id_github file from Secret Manager, and setup SSH
 - name: 'gcr.io/cloud-builders/git'
   secretEnv: ['SSH_KEY']
   entrypoint: 'bash'
   args:
   - -c
   - |
-    mkdir -p /root/.ssh && \
-    echo "$$SSH_KEY" > /root/.ssh/id_rsa && \
-    chmod 400 /root/.ssh/id_rsa && \
+    echo "$$SSH_KEY" >> /root/.ssh/id_rsa
+    chmod 400 /root/.ssh/id_rsa
     cp known_hosts.github /root/.ssh/known_hosts
   volumes:
-  - name: ssh
+  - name: 'ssh'
     path: /root/.ssh
 
-# Clone hello-cloudbuild-env repo
+# Clone the repository
 - name: 'gcr.io/cloud-builders/git'
   args:
   - clone
   - --recurse-submodules
-  - git@github.com:ArpithaPadmanab/hello-cloudbuild-env.git
+  - git@github.com:$ArpithaPadmanab/hello-cloudbuild-env.git
   volumes:
   - name: ssh
     path: /root/.ssh
 
-# Switch to candidate branch
+# [START cloudbuild-trigger-cd]
+# This step clones the hello-cloudbuild-env repository
 - name: 'gcr.io/cloud-builders/gcloud'
   id: Change directory
   entrypoint: /bin/sh
@@ -77,20 +81,20 @@ steps:
   - name: ssh
     path: /root/.ssh
 
-# Generate Kubernetes manifest
+# This step generates the new manifest
 - name: 'gcr.io/cloud-builders/gcloud'
   id: Generate manifest
   entrypoint: /bin/sh
   args:
   - '-c'
   - |
-    sed "s/GOOGLE_CLOUD_PROJECT/${PROJECT_ID}/g" kubernetes.yaml.tpl | \
-    sed "s/COMMIT_SHA/${SHORT_SHA}/g" > hello-cloudbuild-env/kubernetes.yaml
+     sed "s/GOOGLE_CLOUD_PROJECT/${PROJECT_ID}/g" kubernetes.yaml.tpl | \
+     sed "s/COMMIT_SHA/${SHORT_SHA}/g" > hello-cloudbuild-env/kubernetes.yaml
   volumes:
   - name: ssh
     path: /root/.ssh
 
-# Push manifest to candidate branch
+# This step pushes the manifest back to hello-cloudbuild-env
 - name: 'gcr.io/cloud-builders/gcloud'
   id: Push manifest
   entrypoint: /bin/sh
@@ -107,7 +111,6 @@ steps:
   volumes:
   - name: ssh
     path: /root/.ssh
-
 availableSecrets:
   secretManager:
   - versionName: projects/${PROJECT_NUMBER}/secrets/ssh_key_secret/versions/1
